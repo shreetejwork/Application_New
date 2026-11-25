@@ -1,0 +1,730 @@
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+import AppState 1.0
+
+Popup {
+
+    Typography {
+        id: deleteUserTypography
+        scale: 1.0
+    }
+
+    id: deleteUserPopup
+
+    property var globalTopBar
+    property string errorText: ""
+    property bool hasError: false
+
+    // =====================================================
+    // ANIMATION
+    // =====================================================
+
+    enter: Transition {
+        ParallelAnimation {
+            NumberAnimation {
+                property: "opacity"
+                from: 0.0
+                to: 1.0
+                duration: 350
+                easing.type: Easing.OutQuad
+            }
+            NumberAnimation {
+                property: "scale"
+                from: 0.0
+                to: 1.0
+                duration: 350
+                easing.type: Easing.OutQuad
+            }
+        }
+    }
+
+    exit: Transition {
+        ParallelAnimation {
+            NumberAnimation {
+                property: "opacity"
+                from: 1.0
+                to: 0.0
+                duration: 280
+                easing.type: Easing.InQuad
+            }
+            NumberAnimation {
+                property: "scale"
+                from: 1.0
+                to: 0.0
+                duration: 280
+                easing.type: Easing.InQuad
+            }
+        }
+    }
+
+    transformOrigin: Item.Center
+
+    property real baseWidth: 1024
+    property real baseHeight: 600
+
+    property bool isLongPress: false
+    property int longPressCount: 0
+
+    property bool devModeActive: false
+    property bool fieldsLocked: false
+
+    signal deleteUserRequested(string userType, string username)
+    signal clearRequested()
+
+    modal: true
+    focus: true
+    dim: true
+
+    Overlay.modal: Rectangle {
+        color: "#66000000"
+    }
+
+    closePolicy: Popup.CloseOnPressOutside
+
+    width: 520 * scale
+    height: 380 * scale
+
+    x: (Overlay.overlay.width - width) / 2
+    y: (Overlay.overlay.height - height) / 2 - (60 * scale)
+
+    // =====================================================
+    // NO Behavior on y HERE — it was the problem
+    // =====================================================
+
+    onOpened: {
+        userTypeValue.text = "--- Select ---"
+        usernameValue.text = "--- Select ---"
+
+        deleteUserPopup.errorText = ""
+        deleteUserPopup.hasError = false
+
+        deleteUserPopup.devModeActive = false
+        deleteUserPopup.fieldsLocked = false
+        deleteUserPopup.longPressCount = 0
+
+        deleteUserPopup.focus = true
+
+        if (selectionPopup.visible)
+            selectionPopup.close()
+    }
+
+    onClosed: {
+        deleteUserPopup.devModeActive = false
+        deleteUserPopup.fieldsLocked = false
+    }
+
+    background: Rectangle {
+        color: "#EBEBEB"
+        radius: 20 * scale
+        border.color: "#C8C8C8"
+        border.width: 1
+    }
+
+    // =====================================================
+    // CLOSE BUTTON
+    // =====================================================
+
+    Rectangle {
+        width: 34 * scale
+        height: 34 * scale
+
+        radius: width / 2
+
+        color: closeMouse.containsMouse ? "#1A4DB5" : "#1A4DB5"
+
+        anchors.top: parent.top
+        anchors.right: parent.right
+
+        anchors.topMargin: 2 * scale
+        anchors.rightMargin: 12 * scale
+
+        z: 999
+
+        Text {
+            anchors.centerIn: parent
+
+            text: "✕"
+
+            color: "white"
+
+
+            font.pixelSize: 18
+        }
+
+        MouseArea {
+            id: closeMouse
+
+            anchors.fill: parent
+
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+
+            onClicked: {
+
+                GlobalState.loginKeyboardRequest = false
+                GlobalState.activeInputField = null
+
+                deleteUserPopup.close()
+            }
+        }
+    }
+
+    // ================= SELECTION POPUP =================
+    Popup {
+        id: selectionPopup
+        modal: true
+        focus: true
+        anchors.centerIn: Overlay.overlay
+
+        property var modelData: []
+        property string title: ""
+        property var onSelectCallback
+
+        width: 340 * scale
+        height: (4 * 64 * scale) + (64 * scale)
+
+        enter: Transition {
+            ParallelAnimation {
+                NumberAnimation {
+                    property: "opacity"
+                    from: 0.0
+                    to: 1.0
+                    duration: 350
+                    easing.type: Easing.OutQuad
+                }
+                NumberAnimation {
+                    property: "scale"
+                    from: 0.0
+                    to: 1.0
+                    duration: 350
+                    easing.type: Easing.OutQuad
+                }
+            }
+        }
+
+        exit: Transition {
+            ParallelAnimation {
+                NumberAnimation {
+                    property: "opacity"
+                    from: 1.0
+                    to: 0.0
+                    duration: 280
+                    easing.type: Easing.InQuad
+                }
+                NumberAnimation {
+                    property: "scale"
+                    from: 1.0
+                    to: 0.0
+                    duration: 280
+                    easing.type: Easing.InQuad
+                }
+            }
+        }
+
+        transformOrigin: Item.Center
+
+        background: Rectangle {
+            radius: 18 * scale
+            color: "white"
+            border.color: "#E0E3EB"
+            border.width: 1
+        }
+
+        contentItem: Column {
+            anchors.fill: parent
+
+            Rectangle {
+                width: parent.width
+                height: 64 * scale
+                color: "white"
+                radius: 18 * scale
+                clip: true
+
+                Rectangle {
+                    anchors.bottom: parent.bottom
+                    width: parent.width
+                    height: radius
+                    color: "#1A4DB5"
+                }
+
+                Text {
+                    anchors.centerIn: parent
+                    text: selectionPopup.title
+                    color: "#1A4DB5"
+
+                    font.pixelSize: 26
+                }
+            }
+
+            Rectangle { width: parent.width; height: 1; color: "#E5E7EB" }
+
+            Flickable {
+                width: parent.width
+                height: 4 * 64 * scale
+                contentHeight: listColumn.height
+                clip: true
+
+                Column {
+                    id: listColumn
+                    width: parent.width
+
+                    Repeater {
+                        model: selectionPopup.modelData
+
+                        delegate: Rectangle {
+                            width: parent.width
+                            height: 64 * scale
+
+                            color: mouse.pressed
+                                   ? "#E8EDFF"
+                                   : (index % 2 === 0 ? "#FFFFFF" : "#FAFBFF")
+
+                            Rectangle {
+                                anchors.bottom: parent.bottom
+                                width: parent.width
+                                height: 1
+                                color: "#F0F0F0"
+                            }
+
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                anchors.left: parent.left
+                                anchors.leftMargin: 20 * scale
+                                text: modelData
+                                font.pixelSize: 22
+
+                                color: "#1A1A2E"
+                            }
+
+                            MouseArea {
+                                id: mouse
+                                anchors.fill: parent
+                                enabled: !deleteUserPopup.fieldsLocked
+
+                                onClicked: {
+                                    selectionPopup.close()
+                                    if (selectionPopup.onSelectCallback)
+                                        selectionPopup.onSelectCallback(modelData)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Popup {
+        id: confirmDeletePopup
+
+        modal: true
+        focus: true
+        anchors.centerIn: Overlay.overlay
+
+        width: 380 * scale
+        height: 180 * scale
+
+        property string selectedUserType: ""
+        property string selectedUsername: ""
+
+        background: Rectangle {
+            radius: 16 * scale
+            color: "white"
+            border.color: "#DADADA"
+            border.width: 1
+        }
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 20 * scale
+            spacing: 20 * scale
+
+            Text {
+                Layout.fillWidth: true
+                horizontalAlignment: Text.AlignHCenter
+
+                text: "Are you sure you want to delete\n\"" +
+                      confirmDeletePopup.selectedUsername + "\" ?"
+
+                wrapMode: Text.WordWrap
+                color: "#1A1A2E"
+                font.pixelSize: deleteUserTypography.body
+            }
+
+            RowLayout {
+                Layout.alignment: Qt.AlignHCenter
+                spacing: 20 * scale
+
+                Rectangle {
+                    width: 120 * scale
+                    height: 45 * scale
+                    radius: 8 * scale
+                    color: "#1A4DB5"
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Yes"
+                        color: "white"
+                        font.pixelSize: deleteUserTypography.body
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+
+                        onClicked: {
+
+                            confirmDeletePopup.close()
+
+                            var success =
+                                    databaseManager.deleteUser(
+                                        confirmDeletePopup.selectedUserType,
+                                        confirmDeletePopup.selectedUsername)
+
+
+                            if (success)
+                            {
+
+                                // ================= DELETE USER AUDIT =================
+
+
+                                // Current logged-in user (who deleted)
+                                var loggedUser =
+                                        GlobalState.loggedInUserName
+
+                                var loggedRole =
+                                        GlobalState.loggedInUserRole
+
+
+                                var loggedInitial = "U"
+
+
+                                if (loggedRole === "Admin")
+                                    loggedInitial = "A"
+
+                                else if (loggedRole === "Supervisor")
+                                    loggedInitial = "S"
+
+                                else if (loggedRole === "Operator")
+                                    loggedInitial = "O"
+
+
+                                var auditUser =
+                                        loggedInitial + "/" + loggedUser
+
+
+
+                                // Deleted user
+                                var deletedInitial = "U"
+
+
+                                if (confirmDeletePopup.selectedUserType === "Admin")
+                                    deletedInitial = "A"
+
+                                else if (confirmDeletePopup.selectedUserType === "Supervisor")
+                                    deletedInitial = "S"
+
+                                else if (confirmDeletePopup.selectedUserType === "Operator")
+                                    deletedInitial = "O"
+
+
+
+                                var deletedUser =
+                                        deletedInitial
+                                        + "/"
+                                        + confirmDeletePopup.selectedUsername
+
+
+
+                                var auditSaved =
+                                        databaseManager.addAuditTrailRecord(
+                                            auditUser,
+                                            deletedUser,
+                                            "",
+                                            "User Deleted"
+                                        )
+
+                                // ================= UI UPDATE =================
+
+
+                                if (deleteUserPopup.globalTopBar &&
+                                        deleteUserPopup.globalTopBar.showNotification)
+                                {
+                                    deleteUserPopup.globalTopBar.showNotification(
+                                        "✓ User deleted successfully"
+                                    )
+                                }
+
+
+                                userTypeValue.text = "--- Select ---"
+                                usernameValue.text = "--- Select ---"
+
+                                deleteUserPopup.close()
+                            }
+                            else
+                            {
+                                if (confirmDeletePopup.selectedUserType === "Admin")
+                                {
+                                    deleteUserPopup.errorText =
+                                            "Cannot delete the last Admin user. At least one Admin is must."
+
+                                    deleteUserPopup.hasError = true
+                                }
+                                else
+                                {
+                                    deleteUserPopup.errorText =
+                                            "Failed to delete user."
+
+                                    deleteUserPopup.hasError = true
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    width: 120 * scale
+                    height: 45 * scale
+                    radius: 8 * scale
+                    border.color: "#1A4DB5"
+                    border.width: 2
+                    color: "white"
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "No"
+                        color: "#1A4DB5"
+                        font.pixelSize: deleteUserTypography.body
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: confirmDeletePopup.close()
+                    }
+                }
+            }
+        }
+    }
+
+    // ================= MAIN CONTENT =================
+    contentItem: Item {
+        anchors.fill: parent
+        anchors.margins: 28 * scale
+
+        ColumnLayout {
+            id: columnContent
+            anchors.fill: parent
+            spacing: 14 * scale
+
+            Row {
+                spacing: 10 * scale
+                Layout.fillWidth: true
+
+                Text {
+                    text: "Delete User"
+                    font.pixelSize: deleteUserTypography.title
+
+                    color: "#1A4DB5"
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+            }
+
+            // USER TYPE
+            Rectangle {
+                Layout.fillWidth: true
+                height: 58 * scale
+                radius: 10 * scale
+                color: "#F2F2F2"
+                border.color: "#1A4DB5"
+                border.width: 1
+
+                Text {
+                    id: userTypeValue
+                    anchors.left: parent.left
+                    anchors.leftMargin: 18 * scale
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "--- Select ---"
+                    font.pixelSize: deleteUserTypography.body
+
+                }
+
+                Text {
+                    anchors.right: parent.right
+                    anchors.rightMargin: 18 * scale
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "Usertype"
+                    color: "#AAAAAA"
+                    font.pixelSize: deleteUserTypography.body
+
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    enabled: !deleteUserPopup.fieldsLocked
+
+                    onClicked: {
+                        selectionPopup.title = "Select User Type"
+                        selectionPopup.modelData = ["Admin", "Supervisor", "Operator"]
+
+                        selectionPopup.onSelectCallback = function(val) {
+
+                            userTypeValue.text = val
+
+                            usernameValue.text = "--- Select ---"
+
+                            deleteUserPopup.errorText = ""
+                            deleteUserPopup.hasError = false
+                        }
+                        selectionPopup.open()
+                    }
+                }
+            }
+
+            // USERNAME
+            Rectangle {
+                Layout.fillWidth: true
+                height: 58 * scale
+                radius: 10 * scale
+                color: "#F2F2F2"
+                border.color: "#1A4DB5"
+                border.width: 1
+
+                Text {
+                    id: usernameValue
+                    anchors.left: parent.left
+                    anchors.leftMargin: 18 * scale
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "--- Select ---"
+                    font.pixelSize: deleteUserTypography.body
+                }
+
+                Text {
+                    anchors.right: parent.right
+                    anchors.rightMargin: 18 * scale
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "Username"
+                    color: "#AAAAAA"
+                    font.pixelSize: deleteUserTypography.body
+
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    enabled: !deleteUserPopup.fieldsLocked
+
+                    onClicked: {
+
+                        if (userTypeValue.text === "--- Select ---")
+
+                            return
+
+                        selectionPopup.title = "Select Username"
+
+                        deleteUserPopup.errorText = ""
+                        deleteUserPopup.hasError = false
+
+                        selectionPopup.modelData =
+                                databaseManager.getUsersByRole(
+                                    userTypeValue.text)
+
+                        selectionPopup.onSelectCallback = function(val) {
+                            usernameValue.text = val
+                        }
+
+                        selectionPopup.open()
+                    }
+                }
+            }
+
+            Text {
+                Layout.fillWidth: true
+
+                text: deleteUserPopup.errorText
+
+                color: "#FF5252"
+
+                horizontalAlignment: Text.AlignHCenter
+
+                visible: deleteUserPopup.hasError
+
+                wrapMode: Text.WordWrap
+
+                font.pixelSize: deleteUserTypography.caption
+            }
+
+            // ================= BUTTONS =================
+            Row {
+                Layout.alignment: Qt.AlignHCenter
+                spacing: 20 * scale
+
+                Rectangle {
+                    width: 160 * scale
+                    height: 52 * scale
+                    radius: 10 * scale
+                    color: "#1A4DB5"
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Delete User"
+                        color: "white"
+
+                        font.pixelSize: deleteUserTypography.body
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+
+                        onClicked: {
+
+                            if (userTypeValue.text === "--- Select ---" ||
+                                    usernameValue.text === "--- Select ---")
+                                return
+
+                            deleteUserPopup.errorText = ""
+                            deleteUserPopup.hasError = false
+
+                            confirmDeletePopup.selectedUserType = userTypeValue.text
+                            confirmDeletePopup.selectedUsername = usernameValue.text
+
+                            confirmDeletePopup.open()
+                        }
+                    }
+                }
+
+                Rectangle {
+                    width: 160 * scale
+                    height: 52 * scale
+                    radius: 10 * scale
+                    border.color: "#1A4DB5"
+                    border.width: 2
+                    color: "white"
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Clear"
+                        color: "#1A4DB5"
+
+                        font.pixelSize: deleteUserTypography.body
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        enabled: !deleteUserPopup.fieldsLocked
+
+                        onClicked: {
+                            userTypeValue.text = "--- Select ---"
+                            usernameValue.text = "--- Select ---"
+
+                            deleteUserPopup.devModeActive = false
+                            deleteUserPopup.fieldsLocked = false
+
+                            deleteUserPopup.clearRequested()
+                        }
+                    }
+                }
+            }
+
+            Item { Layout.fillHeight: true }
+        }
+    }
+}

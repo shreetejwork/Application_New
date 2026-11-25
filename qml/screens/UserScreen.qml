@@ -1,0 +1,336 @@
+import QtQuick
+import QtQuick.Controls
+
+import AppState 1.0
+
+import "../components"
+
+
+Item {
+    id: root
+    anchors.fill: parent
+
+    property var globalTopBar
+    property var notify
+
+    Rectangle {
+        id: dimBackground
+
+        anchors.fill: parent
+
+        color: "black"
+
+        opacity: (createUserPopup.visible
+                  || editPasswordPopup.visible
+                  || deleteUserPopup.visible)
+                 ? 0.4 : 0.0
+
+        visible: opacity > 0
+
+        z: 998
+
+        Behavior on opacity {
+            NumberAnimation {
+                duration: 250
+            }
+        }
+    }
+
+    property real baseWidth: 1024
+    property real baseHeight: 600
+
+    property real scale: Math.min(width / baseWidth, height / baseHeight)
+
+    // =====================================================
+    // STATIC BACKDROP
+    // =====================================================
+
+    Rectangle {
+        id: backdrop
+        anchors.fill: parent
+        color: "#F5F7FC"
+    }
+
+    // =====================================================
+    // PAGE OPEN ANIMATION
+    // =====================================================
+
+    Component.onCompleted: {
+        openAnimation.start()
+    }
+
+    // =====================================================
+    // OPEN
+    // =====================================================
+
+    ParallelAnimation {
+        id: openAnimation
+
+        NumberAnimation {
+            target: content
+            property: "opacity"
+
+            from: 0.0
+            to: 1.0
+
+            duration: 650
+
+            easing.type: Easing.OutCubic
+        }
+
+        NumberAnimation {
+            target: content
+            property: "pageScale"
+
+            from: 0.85
+            to: 1.0
+
+            duration: 650
+
+            easing.type: Easing.OutBack
+
+            easing.overshoot: 1.05
+        }
+    }
+
+    // =====================================================
+    // CLOSE
+    // =====================================================
+
+    ParallelAnimation {
+        id: closeAnimation
+
+        NumberAnimation {
+            target: content
+            property: "opacity"
+
+            from: 1.0
+            to: 0.0
+
+            duration: 500
+
+            easing.type: Easing.InOutCubic
+        }
+
+        NumberAnimation {
+            target: content
+            property: "pageScale"
+
+            from: 1.0
+            to: 0.85
+
+            duration: 500
+
+            easing.type: Easing.InOutCubic
+        }
+    }
+
+    function closePage() {
+        closeAnimation.start()
+    }
+
+
+
+    //CREATE USER POPUP INSTANCE
+    CreateUserPopup {
+        id: createUserPopup
+        parent: root
+        scale: root.scale
+
+        globalTopBar: root.globalTopBar
+    }
+
+    //EDIT PASSWORD POPUP INSTANCE
+    EditPasswordPopup {
+        id: editPasswordPopup
+
+        globalTopBar: root.globalTopBar
+    }
+
+    //DELETE USER POPUP INSTANCE
+    DeleteUserPopup {
+        id: deleteUserPopup
+
+        globalTopBar: root.globalTopBar
+    }
+
+    Item {
+        id: content
+        anchors.fill: parent
+
+        opacity: 0.0
+        property real pageScale: 0.85
+
+        transform: Scale {
+            origin.x: content.width / 2
+            origin.y: content.height / 2
+
+            xScale: content.pageScale
+            yScale: content.pageScale
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            color: "#F5F7FC"
+
+            // ── Responsive Button ─────
+            component ActionButton: Rectangle {
+                id: btnRoot
+
+                property string label: ""
+                signal clicked()
+
+                width: Math.max(140, 220 * root.scale)
+                height: Math.max(44, 74 * root.scale)
+                radius: height * 0.5
+
+                color: btnMouse.containsPress ? "#F5F7FC" : "white"
+                border.color: "#1A4DB5"
+                border.width: Math.max(2, 3 * root.scale)
+
+                Behavior on color { ColorAnimation { duration: 100 } }
+
+                scale: btnMouse.containsPress ? 0.96 : 1.0
+                Behavior on scale {
+                    NumberAnimation { duration: 100; easing.type: Easing.OutQuad }
+                }
+
+                Text {
+                    anchors.centerIn: parent
+                    text: btnRoot.label
+                    font.pixelSize: 28
+
+                    color: "#1A4DB5"
+                }
+
+                MouseArea {
+                    id: btnMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    onClicked: btnRoot.clicked()
+                }
+            }
+
+            // ── MAIN CONTENT ─────────
+            Column {
+                anchors.centerIn: parent
+                spacing: Math.max(20, 40 * root.scale)
+
+                // ── ICON CARD ────────
+                Rectangle {
+                    width: Math.max(100, 160 * root.scale)
+                    height: width
+                    radius: width * 0.15
+                    color: "#F5F7FC"
+                    anchors.horizontalCenter: parent.horizontalCenter
+
+                    Image {
+                        source: "qrc:/qt/qml/Application/assets/images/userNew.png"
+                        width: parent.width * 0.9
+                        height: parent.height * 0.9
+                        anchors.centerIn: parent
+                        fillMode: Image.PreserveAspectFit
+                        smooth: true
+                        mipmap: true
+                    }
+                }
+
+                // Logged In User Card
+                Rectangle {
+
+                    width: Math.max(300, 360 * root.scale)
+                    height: Math.max(100, 100 * root.scale)
+
+                    anchors.horizontalCenter: parent.horizontalCenter
+
+                    radius: 16
+
+                    color: "white"
+
+                    border.color: "#D8E2FF"
+                    border.width: 2
+
+
+                    Column {
+
+                        anchors.centerIn: parent
+
+                        spacing: 6
+
+                        Rectangle {
+
+                            width: 110 * root.scale
+                            height: 28 * root.scale
+
+                            radius: height / 2
+
+                            anchors.horizontalCenter: parent.horizontalCenter
+
+                            color: "#E8F0FF"
+
+
+                            Text {
+
+                                anchors.centerIn: parent
+
+                                text: GlobalState.loggedInUserRole
+
+                                font.pixelSize: 22 * root.scale
+
+                                color: "#1A4DB5"
+                            }
+                        }
+
+                        Text {
+
+                            text: GlobalState.loggedInUserName
+
+                            anchors.horizontalCenter: parent.horizontalCenter
+
+                            font.pixelSize: 31 * root.scale
+
+                            font.family: "Roboto"
+
+                            color: "#1A4DB5"
+                        }
+                    }
+                }
+
+                // ── BUTTON ROW ─────
+                Row {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    spacing: Math.max(16, 32 * root.scale)
+
+                    ActionButton {
+
+                        visible: GlobalState.hasFullParameterAccess()
+
+                        label: "Add User"
+                        onClicked: {
+                            createUserPopup.open()
+                        }
+                    }
+
+                    ActionButton {
+                        label: "Change PW"
+                        onClicked: {
+
+                            editPasswordPopup.open()
+
+                        }
+                    }
+
+                    ActionButton {
+
+                        visible: GlobalState.hasFullParameterAccess()
+
+                        label: "Delete User"
+                        onClicked: {
+                            deleteUserPopup.open()
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

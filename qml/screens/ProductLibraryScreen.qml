@@ -1,0 +1,1524 @@
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Controls.Basic
+import QtQuick.Layouts
+
+import "../components"
+
+import AppState 1.0
+
+Item {
+    id: root
+    anchors.fill: parent
+
+    Rectangle {
+        id: dimBackground
+
+        anchors.fill: parent
+
+        color: "black"
+
+        opacity: addProductPopup.visible ? 0.4 : 0.0
+
+        visible: opacity > 0
+
+        z: 998
+
+        Behavior on opacity {
+            NumberAnimation {
+                duration: 250
+            }
+        }
+    }
+
+    property real baseWidth: 1024
+    property real baseHeight: 600
+    property real scale: Math.max(0.75, Math.min(width / baseWidth, height / baseHeight))
+
+    property var globalTopBar
+
+    AccessDeniedPopup {
+        id: accessDeniedPopup
+    }
+
+    function requireParameterAccess(parameterId, label) {
+        if (GlobalState.hasParameterAccess(parameterId))
+            return true
+
+        accessDeniedPopup.popupTitle = "Access Denied !"
+        accessDeniedPopup.popupMessage =
+                GlobalState.parameterAccessDeniedMessage(parameterId, label)
+        accessDeniedPopup.open()
+        return false
+    }
+
+    // =====================================================
+    // STATIC BACKDROP
+    // =====================================================
+
+    Rectangle {
+        id: backdrop
+        anchors.fill: parent
+        color: "#F5F7FC"
+    }
+
+    // =====================================================
+    // PAGE OPEN ANIMATION
+    // =====================================================
+
+    Component.onCompleted: {
+
+        loadAllGroupProducts()
+
+
+        showActiveProductGroup()
+
+
+        openAnimation.start()
+    }
+
+    // =====================================================
+    // OPEN
+    // =====================================================
+
+    ParallelAnimation {
+        id: openAnimation
+
+        NumberAnimation {
+            target: content
+            property: "opacity"
+
+            from: 0.0
+            to: 1.0
+
+            duration: 650
+
+            easing.type: Easing.OutCubic
+        }
+
+        NumberAnimation {
+            target: content
+            property: "pageScale"
+
+            from: 0.85
+            to: 1.0
+
+            duration: 650
+
+            easing.type: Easing.OutBack
+
+            easing.overshoot: 1.05
+        }
+    }
+
+    // =====================================================
+    // CLOSE
+    // =====================================================
+
+    ParallelAnimation {
+        id: closeAnimation
+
+        NumberAnimation {
+            target: content
+            property: "opacity"
+
+            from: 1.0
+            to: 0.0
+
+            duration: 500
+
+            easing.type: Easing.InOutCubic
+        }
+
+        NumberAnimation {
+            target: content
+            property: "pageScale"
+
+            from: 1.0
+            to: 0.85
+
+            duration: 500
+
+            easing.type: Easing.InOutCubic
+        }
+    }
+
+    function closePage() {
+        closeAnimation.start()
+    }
+
+    property int currentGroup: 1
+
+    property var loadedProduct: null
+
+    property var activeModel: group01Model
+
+    // ===== COLUMN WIDTHS =====
+
+    property real colSpacing: 15 * root.scale
+
+    property real colSelect: 32 * root.scale
+    property real colActive: 22 * root.scale
+    property real colSr: 100 * root.scale
+    property real colCode: 170 * root.scale
+
+    property real colStatus: 80 * root.scale
+
+    property real tableHorizontalMargin: 12 * root.scale
+    property real tableSpacing: 14 * root.scale
+
+    property real dynamicNameWidth:
+        productList.width
+        - (tableHorizontalMargin * 2)
+        - (tableSpacing * 4)
+        - colSelect
+        - colStatus
+        - colSr
+        - colCode
+
+
+
+    // ===== SHARED LAYOUT HELPERS =====
+
+    property real rowFixedSpacing: 16 * root.scale * 3
+    property real rowSelectExtra: root.colSelect + 16 * root.scale
+
+    // ===== SELECTION STATE =====
+
+    property int selectedCount: getSelectedCount()
+
+    function getSelectedCount() {
+
+        var model = currentModel()
+        var count = 0
+
+        for (var i = 0; i < model.count; i++) {
+
+            if (model.get(i).selected)
+                count++
+        }
+
+        return count
+    }
+
+    function clearSelection() {
+
+        var model = currentModel()
+
+        for (var i = 0; i < model.count; i++) {
+
+            model.setProperty(i, "selected", false)
+        }
+
+        selectedCount = 0
+    }
+
+    function refreshSelectionCount() {
+
+        selectedCount = getSelectedCount()
+    }
+
+    function toggleProductSelection(index) {
+        var model = currentModel()
+        if (index < 0 || index >= model.count)
+            return
+
+        model.setProperty(index, "selected", !model.get(index).selected)
+        refreshSelectionCount()
+    }
+
+    function getSingleSelectedSr() {
+
+        var model = currentModel()
+
+        for (var i = 0; i < model.count; i++) {
+
+            if (model.get(i).selected)
+                return model.get(i).sr
+        }
+
+        return -1
+    }
+
+    function nameColWidth(totalWidth) {
+
+        return totalWidth
+                - root.colActive
+                - root.colSr
+                - root.colCode
+                - rowFixedSpacing
+                - rowSelectExtra
+    }
+
+    function loadGroupProducts(groupNo) {
+
+        var model = groupModels[groupNo - 1]
+
+        model.clear()
+
+        var products =
+                databaseManager.getProductLibraryProducts(groupNo)
+
+        for (var i = 0; i < products.length; i++) {
+
+            model.append({
+                selected: false,
+                active: products[i].active,
+                sr: products[i].sr,
+                name: products[i].name,
+                code: products[i].code,
+
+                machinePhase: products[i].machinePhase,
+                signalThr: products[i].signalThr,
+                ampThr: products[i].ampThr,
+                ddPower: products[i].ddPower,
+                ddFreq: products[i].ddFreq,
+                digitalGain: products[i].digitalGain,
+                analogGain: products[i].analogGain,
+
+                fixedItem: products[i].fixedItem
+            })
+        }
+
+        activeModel = model
+
+        updateLoadedProduct()
+
+        refreshSelectionCount()
+    }
+
+    function loadAllGroupProducts() {
+
+        for (var groupNo = 1; groupNo <= 10; groupNo++) {
+
+            var model = groupModels[groupNo - 1]
+
+            model.clear()
+
+            var products =
+                    databaseManager.getProductLibraryProducts(groupNo)
+
+            for (var i = 0; i < products.length; i++) {
+
+                model.append({
+                    selected: false,
+
+                    active: products[i].active,
+
+                    sr: products[i].sr,
+
+                    name: products[i].name,
+
+                    code: products[i].code,
+
+                    machinePhase: products[i].machinePhase,
+
+                    signalThr: products[i].signalThr,
+
+                    ampThr: products[i].ampThr,
+
+                    ddPower: products[i].ddPower,
+
+                    ddFreq: products[i].ddFreq,
+
+                    digitalGain: products[i].digitalGain,
+
+                    analogGain: products[i].analogGain,
+
+                    fixedItem: products[i].fixedItem
+                })
+            }
+        }
+
+
+        // Keep the currently displayed group
+        activeModel = currentModel()
+
+        updateLoadedProduct()
+
+        refreshSelectionCount()
+    }
+
+    // =====================================================
+    // FIND ACTIVE PRODUCT FROM ALL GROUPS
+    // =====================================================
+
+    function getActiveProductFromAllGroups()
+    {
+        for (var groupIndex = 0;
+             groupIndex < groupModels.length;
+             groupIndex++) {
+
+            var model = groupModels[groupIndex]
+
+            for (var i = 0; i < model.count; i++) {
+
+                var item = model.get(i)
+
+                if (item.active) {
+
+                    return {
+                        groupNo: groupIndex + 1,
+                        sr: item.sr,
+                        code: item.code,
+                        name: item.name
+                    }
+                }
+            }
+        }
+
+        return null
+    }
+
+    // =====================================================
+    // OPEN GROUP WHICH CONTAINS ACTIVE PRODUCT
+    // =====================================================
+
+    function showActiveProductGroup()
+    {
+        var activeProduct =
+                getActiveProductFromAllGroups()
+
+        if (!activeProduct) {
+
+            // No active product found
+            currentGroup = 1
+            groupCombo.currentIndex = 0
+
+            activeModel = currentModel()
+
+            loadedProduct = null
+            GlobalState.productName = ""
+
+            return
+        }
+
+
+        // -------------------------------------------------
+        // Set current group
+        // -------------------------------------------------
+
+        currentGroup = activeProduct.groupNo
+
+
+        groupCombo.currentIndex =
+                activeProduct.groupNo - 1
+
+
+        // -------------------------------------------------
+        // Show correct model
+        // -------------------------------------------------
+
+        activeModel = currentModel()
+
+
+        // -------------------------------------------------
+        // Update loaded product
+        // -------------------------------------------------
+
+        updateLoadedProduct()
+
+
+        console.log(
+            "Opening active product group:",
+            activeProduct.groupNo,
+            activeProduct.code
+        )
+    }
+
+    // ================= MODELS =================
+
+    ListModel {
+        id: group01Model
+    }
+
+    ListModel { id: group02Model }
+    ListModel { id: group03Model }
+    ListModel { id: group04Model }
+    ListModel { id: group05Model }
+    ListModel { id: group06Model }
+    ListModel { id: group07Model }
+    ListModel { id: group08Model }
+    ListModel { id: group09Model }
+    ListModel { id: group10Model }
+
+    property var groupModels: [
+        group01Model, group02Model, group03Model, group04Model, group05Model,
+        group06Model, group07Model, group08Model, group09Model, group10Model
+    ]
+
+    function currentModel() {
+
+        return groupModels[currentGroup - 1]
+    }
+
+    function updateLoadedProduct() {
+
+        var model = currentModel()
+
+        loadedProduct = null
+        GlobalState.productName = ""
+
+        for (var i = 0; i < model.count; i++) {
+
+            var item = model.get(i)
+
+            if (item.active) {
+
+                loadedProduct = item
+                GlobalState.productName = item.name
+
+                break
+            }
+        }
+    }
+
+    function getFreeSrNo(model) {
+
+        for (var srNo = 1; srNo <= 100; srNo++) {
+
+            var found = false
+
+            for (var i = 0; i < model.count; i++) {
+
+                if (model.get(i).sr === srNo) {
+
+                    found = true
+                    break
+                }
+            }
+
+            if (!found)
+                return srNo
+        }
+
+        return -1
+    }
+
+    function addProduct(productName, productCode) {
+        if (!root.requireParameterAccess("productAdd", "add products"))
+            return false
+
+        var model = currentModel()
+
+        // ---------------------------------------------------------
+        // Maximum 100 products
+        // ---------------------------------------------------------
+
+        if (model.count >= 100) {
+
+            console.log(
+                "GROUP",
+                currentGroup,
+                "already contains 100 products"
+            )
+
+            return false
+        }
+
+
+        // ---------------------------------------------------------
+        // Save product
+        // ---------------------------------------------------------
+
+        var success =
+                databaseManager.addProductLibraryProduct(
+                    currentGroup,
+                    productName,
+                    productCode
+                )
+
+
+        if (!success) {
+
+            console.log(
+                "Failed to add product:",
+                productName,
+                productCode
+            )
+
+            return false
+        }
+
+
+        // ---------------------------------------------------------
+        // Reload from database
+        // ---------------------------------------------------------
+
+        loadGroupProducts(currentGroup)
+
+
+        // =========================================================
+        // FIND NEWLY ADDED PRODUCT
+        // =========================================================
+
+        var addedProductSr = -1
+
+        var current = currentModel()
+
+        for (var i = 0; i < current.count; i++) {
+
+            if (current.get(i).code === productCode) {
+
+                addedProductSr = current.get(i).sr
+                break
+            }
+        }
+
+
+        // =========================================================
+        // PRODUCT ADDED AUDIT
+        // =========================================================
+
+        var loggedUser =
+                GlobalState.loggedInUserName
+
+        var loggedRole =
+                GlobalState.loggedInUserRole
+
+
+        var loggedInitial = "U"
+
+        if (loggedRole === "Admin")
+            loggedInitial = "A"
+
+        else if (loggedRole === "Supervisor")
+            loggedInitial = "S"
+
+        else if (loggedRole === "Operator")
+            loggedInitial = "O"
+
+
+        // Example:
+        // A/admin
+        var auditUser =
+                loggedInitial + "/" + loggedUser
+
+
+        // ---------------------------------------------------------
+        // Product ID
+        // ---------------------------------------------------------
+
+        var groupText =
+                currentGroup < 10
+                ? "0" + currentGroup
+                : currentGroup
+
+
+        var productId =
+                "G" + groupText
+                + "/" + addedProductSr
+                + "/" + productCode
+
+
+        // ---------------------------------------------------------
+        // Save audit trail
+        // ---------------------------------------------------------
+
+        var auditSaved =
+                databaseManager.addAuditTrailRecord(
+                    auditUser,
+                    "",
+                    productId,
+                    "New Product Added"
+                )
+        return true
+    }
+
+    function deleteSelectedProducts() {
+        if (!root.requireParameterAccess("productDelete", "delete products"))
+            return
+
+        var model = currentModel()
+
+
+        // =========================================================
+        // CURRENT LOGGED-IN USER
+        // =========================================================
+
+        var loggedUser =
+                GlobalState.loggedInUserName
+
+        var loggedRole =
+                GlobalState.loggedInUserRole
+
+
+        var loggedInitial = "U"
+
+        if (loggedRole === "Admin")
+            loggedInitial = "A"
+
+        else if (loggedRole === "Supervisor")
+            loggedInitial = "S"
+
+        else if (loggedRole === "Operator")
+            loggedInitial = "O"
+
+
+        var auditUser =
+                loggedInitial + "/" + loggedUser
+
+
+        // =========================================================
+        // DELETE PRODUCTS
+        // =========================================================
+
+        for (var i = model.count - 1; i >= 0; i--) {
+
+            var item = model.get(i)
+
+
+            if (item.selected && !item.fixedItem) {
+
+                // -------------------------------------------------
+                // Save product information BEFORE deleting it
+                // -------------------------------------------------
+
+                var deletedSr = item.sr
+                var deletedCode = item.code
+                var deletedName = item.name
+
+
+                var success =
+                        databaseManager.deleteProductLibraryProduct(
+                            currentGroup,
+                            deletedSr
+                        )
+
+
+                if (success) {
+
+                    // -------------------------------------------------
+                    // Remove from UI
+                    // -------------------------------------------------
+
+                    model.remove(i)
+
+
+                    // =================================================
+                    // PRODUCT ID
+                    // =================================================
+
+                    var groupText =
+                            currentGroup < 10
+                            ? "0" + currentGroup
+                            : currentGroup
+
+
+                    var productId =
+                            "G" + groupText
+                             + "/" + deletedSr
+                            + "/" + deletedCode
+
+
+                    // =================================================
+                    // PRODUCT DELETED AUDIT
+                    // =================================================
+
+                    var auditSaved =
+                            databaseManager.addAuditTrailRecord(
+                                auditUser,
+                                productId,
+                                "",
+                                "Product Deleted"
+                            )
+                }
+            }
+        }
+
+
+        refreshSelectionCount()
+    }
+
+    Item {
+        id: content
+        anchors.fill: parent
+
+        opacity: 0.0
+        property real pageScale: 0.85
+
+        transform: Scale {
+            origin.x: content.width / 2
+            origin.y: content.height / 2
+
+            xScale: content.pageScale
+            yScale: content.pageScale
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            color: "#F5F7FC"
+
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: 20 * root.scale
+                spacing: 12 * root.scale
+
+                // ================= TITLE =================
+
+                Column {
+                    spacing: 6 * root.scale
+
+                    Text {
+                        text: "Product Library"
+                        font.pixelSize: 26
+
+                        color: "#1A4DB5"
+                    }
+
+                    Rectangle {
+                        width: 80 * root.scale
+                        height: 4 * root.scale
+                        radius: 2 * root.scale
+                        color: "#1A4DB5"
+                    }
+                }
+
+                // ================= TOP BAR =================
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 64 * root.scale
+                    color: "#FFFFFF"
+                    radius: 12 * root.scale
+                    border.color: "#C8D4EE"
+                    border.width: 1
+
+                    Rectangle {
+                        anchors.top: parent.top
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        height: 2 * root.scale
+                        radius: 12 * root.scale
+                        color: "#E8EEF9"
+                    }
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 14 * root.scale
+                        anchors.rightMargin: 14 * root.scale
+                        anchors.topMargin: 8 * root.scale
+                        anchors.bottomMargin: 8 * root.scale
+                        spacing: 10 * root.scale
+
+                        // ================= GROUP COMBO =================
+
+                        ComboBox {
+                            id: groupCombo
+
+                            Layout.preferredWidth: 210 * root.scale
+                            Layout.preferredHeight: Math.max(38, 44 * root.scale)
+                            Layout.alignment: Qt.AlignVCenter
+
+                            model: [
+                                "GROUP 01", "GROUP 02", "GROUP 03", "GROUP 04", "GROUP 05",
+                                "GROUP 06", "GROUP 07", "GROUP 08", "GROUP 09", "GROUP 10"
+                            ]
+
+                            currentIndex: 0
+
+                            onCurrentIndexChanged: {
+
+                                currentGroup = currentIndex + 1
+
+                                loadGroupProducts(currentGroup)
+                            }
+
+                            font.pixelSize: 15
+
+                            delegate: ItemDelegate {
+                                width: groupCombo.width
+                                height: Math.max(42, 44 * root.scale)
+
+                                background: Rectangle {
+                                    color: highlighted ? "#E3EDFF" : "#FFFFFF"
+
+                                    Rectangle {
+                                        anchors.left: parent.left
+                                        anchors.right: parent.right
+                                        anchors.bottom: parent.bottom
+                                        anchors.leftMargin: 10 * root.scale
+                                        anchors.rightMargin: 10 * root.scale
+                                        height: 1
+                                        color: "#E4EAF5"
+                                    }
+                                }
+
+                                contentItem: Text {
+                                    text: modelData
+                                    color: highlighted ? "#1A4DB5" : "#2A3550"
+                                    font.pixelSize: 15
+                                    font.weight: highlighted ? Font.Medium : Font.Normal
+                                    verticalAlignment: Text.AlignVCenter
+                                    leftPadding: 16 * root.scale
+                                    rightPadding: 12 * root.scale
+                                }
+                            }
+
+                            indicator: Text {
+                                text: "▼"
+                                anchors.verticalCenter: parent.verticalCenter
+                                anchors.right: parent.right
+                                anchors.rightMargin: 14 * root.scale
+                                font.pixelSize: 12
+                                color: "#1A4DB5"
+                            }
+
+                            contentItem: Text {
+                                text: groupCombo.displayText
+                                color: "#2A3550"
+                                font.pixelSize: 15
+                                font.weight: Font.Medium
+                                verticalAlignment: Text.AlignVCenter
+                                leftPadding: 14 * root.scale
+                                rightPadding: 34 * root.scale
+                            }
+
+                            background: Rectangle {
+                                radius: 8 * root.scale
+                                color: "#EDF1FA"
+                                border.width: 1
+                                border.color: groupCombo.popup.visible ? "#1A4DB5" : "#C8D4EE"
+                            }
+
+                            popup: Popup {
+                                y: groupCombo.height + 4 * root.scale
+                                width: groupCombo.width
+                                padding: 2 * root.scale
+
+                                background: Rectangle {
+                                    radius: 10 * root.scale
+                                    color: "#FFFFFF"
+                                    border.color: "#C8D4EE"
+                                    border.width: 1
+                                }
+
+                                contentItem: ListView {
+                                    clip: true
+                                    implicitHeight: Math.min(
+                                                        contentHeight,
+                                                        8 * Math.max(42, 44 * root.scale))
+                                    model: groupCombo.popup.visible ? groupCombo.delegateModel : null
+                                    currentIndex: groupCombo.highlightedIndex
+                                    spacing: 0
+
+                                    ScrollBar.vertical: ScrollBar {
+                                        policy: ScrollBar.AsNeeded
+                                        width: 6 * root.scale
+                                    }
+                                }
+                            }
+                        }
+
+                        Item { Layout.fillWidth: true }
+
+                        // ================= BUTTONS =================
+
+                        Repeater {
+                            model: ["LOAD", "ADD", "DELETE"]
+
+                            delegate: Rectangle {
+
+                                property bool loadDisabled:
+                                    modelData === "LOAD"
+                                    && selectedCount !== 1
+
+                                property bool deleteDisabled:
+                                    modelData === "DELETE"
+                                    && selectedCount === 0
+
+                                width: 100 * root.scale
+                                height: 38 * root.scale
+                                radius: 8 * root.scale
+
+                                color: (loadDisabled || deleteDisabled)
+                                       ? "#E4EAF5"
+                                       : "#FFFFFF"
+
+                                border.width: 1
+
+                                border.color:
+                                    modelData === "DELETE"
+                                    ? "#C62828"
+                                    : "#1A4DB5"
+
+                                opacity: (loadDisabled || deleteDisabled) ? 0.5 : 1.0
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: modelData
+                                    font.pixelSize: 15
+                                    font.weight: Font.Medium
+
+                                    color:
+                                        modelData === "DELETE"
+                                        ? "#C62828"
+                                        : "#1A4DB5"
+                                }
+
+                                MouseArea {
+                                    anchors.fill: parent
+
+                                    enabled: !(loadDisabled || deleteDisabled)
+
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+
+                                    onClicked: {
+
+                                        if (modelData === "LOAD") {
+                                            if (!root.requireParameterAccess(
+                                                        "productLoad", "load products"))
+                                                return
+
+                                            GlobalState.sendDataAfterLoad = true
+
+                                            var srNo = getSingleSelectedSr()
+
+                                            if (srNo !== -1) {
+
+                                                var model = currentModel()
+
+
+                                                // ============================================
+                                                // GET NEW PRODUCT DETAILS
+                                                // ============================================
+
+                                                var selectedProduct = null
+
+                                                for (var i = 0; i < model.count; i++) {
+
+                                                    if (model.get(i).sr === srNo) {
+
+                                                        selectedProduct = model.get(i)
+                                                        break
+                                                    }
+                                                }
+
+                                                if (!selectedProduct)
+                                                    return
+
+
+                                                // ============================================
+                                                // FIND PREVIOUSLY ACTIVE PRODUCT
+                                                // SEARCH ALL GROUPS
+                                                // ============================================
+
+                                                var previousProduct =
+                                                        root.getActiveProductFromAllGroups()
+
+
+                                                // ============================================
+                                                // LOAD PRODUCT
+                                                // ============================================
+
+                                                var success =
+                                                        databaseManager.setActiveProductLibraryProduct(
+                                                            currentGroup,
+                                                            srNo
+                                                        )
+
+
+                                                if (success) {
+
+                                                    root.loadedProduct =
+                                                            selectedProduct
+
+                                                    GlobalState.productName =
+                                                            selectedProduct.name
+
+
+                                                    // ============================================
+                                                    // CURRENT LOGGED-IN USER
+                                                    // ============================================
+
+                                                    var loggedUser =
+                                                            GlobalState.loggedInUserName
+
+                                                    var loggedRole =
+                                                            GlobalState.loggedInUserRole
+
+                                                    var loggedInitial = "U"
+
+                                                    if (GlobalState.developerLogin) {
+                                                        loggedInitial = "D"
+                                                        loggedUser = "Developer"
+                                                    }
+                                                    else if (GlobalState.engineerLogin) {
+                                                        loggedInitial = "E"
+                                                        loggedUser = "Engineer"
+                                                    }
+                                                    else if (loggedRole === "Admin") {
+                                                        loggedInitial = "A"
+                                                    }
+                                                    else if (loggedRole === "Supervisor") {
+                                                        loggedInitial = "S"
+                                                    }
+                                                    else if (loggedRole === "Operator") {
+                                                        loggedInitial = "O"
+                                                    }
+
+
+                                                    var auditUser =
+                                                            loggedInitial + "/" + loggedUser
+
+
+                                                    // ============================================
+                                                    // PREVIOUS PRODUCT
+                                                    // ============================================
+
+                                                    var previousProductText = ""
+
+                                                    if (previousProduct) {
+
+                                                        var previousGroupText =
+                                                                previousProduct.groupNo < 10
+                                                                ? "0" + previousProduct.groupNo
+                                                                : previousProduct.groupNo
+
+                                                        previousProductText =
+                                                                "G"
+                                                                + previousGroupText
+                                                                + "/"
+                                                                + previousProduct.sr
+                                                                + "/"
+                                                                + previousProduct.code
+                                                    }
+
+
+                                                    // ============================================
+                                                    // NEW PRODUCT
+                                                    // ============================================
+
+                                                    var newGroupText =
+                                                            currentGroup < 10
+                                                            ? "0" + currentGroup
+                                                            : currentGroup
+
+                                                    var newProductText =
+                                                            "G"
+                                                            + newGroupText
+                                                            + "/"
+                                                            + selectedProduct.sr
+                                                            + "/"
+                                                            + selectedProduct.code
+
+
+                                                    // ============================================
+                                                    // PRODUCT LOAD AUDIT
+                                                    // ============================================
+
+                                                    databaseManager.addAuditTrailRecord(
+                                                        auditUser,
+                                                        previousProductText,
+                                                        newProductText,
+                                                        "Product Loaded"
+                                                    )
+
+
+                                                    // ============================================
+                                                    // RELOAD ALL GROUPS
+                                                    // ============================================
+
+                                                    loadAllGroupProducts()
+
+                                                    clearSelection()
+
+
+                                                    // ============================================
+                                                    // NOTIFICATION
+                                                    // ============================================
+
+                                                    if (root.globalTopBar &&
+                                                            root.globalTopBar.showNotification) {
+
+                                                        root.globalTopBar.showNotification(
+                                                            "✓ Product loaded successfully"
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        else if (modelData === "ADD") {
+
+                                            if (!root.requireParameterAccess(
+                                                        "productAdd", "add products"))
+                                                return
+                                            addProductPopup.open()
+                                        }
+
+                                        else if (modelData === "DELETE") {
+
+                                            deleteSelectedProducts()
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ================= MAIN CONTENT =================
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    spacing: 10 * root.scale
+
+                    // ================= TABLE =================
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        radius: 10 * root.scale
+                        color: "#FFFFFF"
+                        border.color: "#D0D8EC"
+                        border.width: 1
+                        clip: true
+
+                        ColumnLayout {
+                            anchors.fill: parent
+                            spacing: 0
+
+                            // ================= HEADER =================
+
+                            Rectangle {
+                                Layout.fillWidth: true
+                                height: 44 * root.scale
+                                color: "#1A4DB5"
+                                radius: 10 * root.scale
+
+                                Rectangle {
+                                    anchors.bottom: parent.bottom
+                                    anchors.left: parent.left
+                                    anchors.right: parent.right
+                                    height: 10 * root.scale
+                                    color: "#1A4DB5"
+                                }
+
+                                RowLayout {
+                                    anchors.fill: parent
+
+                                    anchors.leftMargin: root.tableHorizontalMargin
+                                    anchors.rightMargin: root.tableHorizontalMargin
+                                    spacing: root.tableSpacing
+
+                                    Item {
+                                        Layout.preferredWidth: root.colSelect
+                                    }
+
+                                    Text {
+                                        text: "Status"
+
+                                        Layout.preferredWidth: root.colStatus
+
+                                        horizontalAlignment: Text.AlignHCenter
+                                        verticalAlignment: Text.AlignVCenter
+
+                                        color: "#FFFFFF"
+
+                                        font.pixelSize: 18
+                                    }
+
+                                    Text {
+                                        text: "Sr. No."
+
+                                        Layout.preferredWidth: root.colSr
+
+                                        horizontalAlignment: Text.AlignLeft
+                                        verticalAlignment: Text.AlignVCenter
+
+                                        color: "#FFFFFF"
+
+                                        font.pixelSize: 18
+                                    }
+
+                                    Text {
+                                        text: "Product Name"
+
+                                        Layout.preferredWidth: root.dynamicNameWidth
+
+                                        verticalAlignment: Text.AlignVCenter
+
+                                        color: "#FFFFFF"
+
+                                        font.pixelSize: 18
+
+                                        elide: Text.ElideRight
+                                    }
+
+                                    Text {
+                                        text: "Product Code"
+
+                                        Layout.preferredWidth: root.colCode
+
+                                        horizontalAlignment: Text.AlignHCenter
+                                        verticalAlignment: Text.AlignVCenter
+
+                                        color: "#FFFFFF"
+
+                                        font.pixelSize: 18
+                                    }
+                                }
+                            }
+
+                            // ================= LIST =================
+
+                            ListView {
+                                id: productList
+
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
+
+                                clip: true
+                                spacing: 0
+                                boundsBehavior: Flickable.StopAtBounds
+
+                                model: activeModel
+
+                                ScrollBar.vertical: ScrollBar {
+                                    policy: ScrollBar.AsNeeded
+                                    width: 8 * root.scale
+                                }
+
+                                delegate: Rectangle {
+                                    id: rowRect
+
+                                    width: productList.width
+                                    height: visible ? Math.max(46, 50 * root.scale) : 0
+
+                                    property bool isSelected: selected === true
+
+                                    color: isSelected
+                                           ? "#E3EDFF"
+                                           : (index % 2 === 0 ? "#FFFFFF" : "#F4F7FF")
+
+                                    TapHandler {
+                                        onTapped: root.toggleProductSelection(index)
+                                    }
+
+                                    Rectangle {
+                                        anchors.bottom: parent.bottom
+                                        anchors.left: parent.left
+                                        anchors.right: parent.right
+                                        height: 1
+                                        color: "#E4EAF5"
+                                    }
+
+                                    RowLayout {
+                                        anchors.fill: parent
+
+                                        anchors.leftMargin: root.tableHorizontalMargin
+                                        anchors.rightMargin: root.tableHorizontalMargin
+                                        spacing: root.tableSpacing
+
+                                        // CHECKBOX
+
+                                        Rectangle {
+                                            Layout.preferredWidth: root.colSelect
+                                            Layout.preferredHeight: Math.min(
+                                                                       parent.height - 8 * root.scale,
+                                                                       26 * root.scale)
+
+                                            radius: 5 * root.scale
+
+                                            color: isSelected ? "#1A4DB5" : "#FFFFFF"
+
+                                            border.color: isSelected
+                                                          ? "#1A4DB5"
+                                                          : "#8BA0CC"
+
+                                            border.width: 1.5
+
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: "✓"
+                                                visible: isSelected
+                                                color: "#FFFFFF"
+
+                                                font.pixelSize: 12
+                                            }
+
+                                        }
+
+                                        // STATUS
+
+                                        Rectangle {
+                                            Layout.preferredWidth: root.colStatus
+                                            Layout.preferredHeight: root.colActive
+
+                                            radius: root.colActive / 2
+
+                                            color: active ? "#1A4DB5" : "#D5DDEE"
+
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: active ? "A" : ""
+                                                color: "#FFFFFF"
+
+                                                font.pixelSize: 12
+                                            }
+                                        }
+
+                                        // SR
+
+                                        Text {
+                                            text: sr
+
+                                            Layout.preferredWidth: root.colSr
+
+                                            verticalAlignment: Text.AlignVCenter
+
+                                            font.pixelSize: 17
+                                            font.weight: active ? Font.Medium : Font.Normal
+
+                                            color: "#2A3550"
+                                        }
+
+                                        // PRODUCT NAME
+
+                                        Text {
+                                            text: name
+
+                                            Layout.preferredWidth: root.dynamicNameWidth
+
+                                            elide: Text.ElideRight
+
+                                            verticalAlignment: Text.AlignVCenter
+
+                                            font.pixelSize: 17
+                                            font.weight: active ? Font.Medium : Font.Normal
+
+                                            color: "#2A3550"
+                                        }
+
+                                        // PRODUCT CODE
+
+                                        Rectangle {
+                                            Layout.preferredWidth: root.colCode
+                                            Layout.preferredHeight: 24 * root.scale
+
+                                            radius: 12 * root.scale
+
+                                            color: active ? "#E8F0FF" : "#EDF1FA"
+
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: code
+
+                                                font.pixelSize: 16
+                                                font.weight: Font.Medium
+
+                                                color: active ? "#1A4DB5" : "#4A5E8A"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // ================= SIDE PANEL =================
+
+                    Rectangle {
+                        Layout.preferredWidth: 260 * root.scale
+                        Layout.fillHeight: true
+                        radius: 10 * root.scale
+                        color: "#FFFFFF"
+                        border.color: "#D0D8EC"
+
+                        Column {
+                            anchors.fill: parent
+                            anchors.margins: 14 * root.scale
+                            spacing: 10 * root.scale
+
+                            Text {
+                                text: "Details"
+                                font.pixelSize: 20
+
+                                color: "#1A4DB5"
+                            }
+
+                            Rectangle {
+                                width: parent.width
+                                height: 2
+                                color: "#E4EAF5"
+                            }
+
+                            Text { text: "Phase : " + (root.loadedProduct ? root.loadedProduct.machinePhase : "--"); font.pixelSize: 20; color: "#202020" }
+
+                            Text { text: "Signal : " + (root.loadedProduct ? root.loadedProduct.signalThr : "--"); font.pixelSize: 20; color: "#202020" }
+
+                            Text { text: "Amplitude : " + (root.loadedProduct ? root.loadedProduct.ampThr : "--"); font.pixelSize: 20; color: "#202020" }
+
+                            Text { text: "Digital Gain : " + (root.loadedProduct ? root.loadedProduct.digitalGain : "--"); font.pixelSize: 20; color: "#202020" }
+
+                            Text { text: "Analog Gain : " + (root.loadedProduct ? root.loadedProduct.analogGain : "--"); font.pixelSize: 20; color: "#202020" }
+
+                            Text { visible: GlobalState.showDDuster; text: "DD Frequency : " + (root.loadedProduct ? root.loadedProduct.ddFreq : "--"); font.pixelSize: 20; color: "#202020" }
+
+                            Text { visible: GlobalState.showDDuster; text: "DD Power : " + (root.loadedProduct ? root.loadedProduct.ddPower : "--"); font.pixelSize: 20; color: "#202020" }
+
+                            Rectangle {
+                                width: parent.width
+                                height: 1
+                                color: "#E4EAF5"
+                            }
+
+                            Text {
+                                text: "Current Group : "
+                                      + (currentGroup < 10
+                                         ? "0" + currentGroup
+                                         : currentGroup)
+
+                                font.pixelSize: 18
+                                color: "#1A1A1A"
+                            }
+
+                            Text {
+                                text: "Products : "
+                                      + currentModel().count
+                                      + " / 100"
+
+                                font.pixelSize: 18
+                                color: "#1A1A1A"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    AddProductPopup {
+        id: addProductPopup
+
+        parent: Overlay.overlay
+
+        scaleFactor: root.scale
+
+        currentModelRef: activeModel
+
+        getFreeSrNoFunc: getFreeSrNo
+
+        globalTopBar: root.globalTopBar
+
+        onProductSaved: function(productName, productCode) {
+
+            var success = root.addProduct(
+                        productName,
+                        productCode
+                        )
+
+            if (!success) {
+
+                console.log(
+                    "Failed to save product:",
+                    productName,
+                    productCode
+                )
+            }
+        }
+    }
+}
