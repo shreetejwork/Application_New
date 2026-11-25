@@ -11,6 +11,8 @@ Rectangle {
     property color traceColor: "#1A4DB5"
     property var selectedChannels: ["x", "y", "z1", "z2"]
     property var samples: []
+    property real revealProgress: 1
+    property bool reverseTime: false
     property bool cursorEnabled: false
     property int hoverSampleIndex: -1
     property int firstCursorIndex: -1
@@ -25,10 +27,27 @@ Rectangle {
     readonly property int maxVisibleSamples: 10000
     readonly property real valueLimit: 32768
     property real sampleIntervalMilliseconds: 1
+    readonly property int revealedSampleCount:
+        Math.ceil(samples.length * Math.max(0, Math.min(1, revealProgress)))
 
-    function shouldShowPeakInfo() {
+    function visibleSampleCount() {
+        return Math.min(visibleSamples,
+                        Math.max(0, Math.min(samples.length,
+                                             revealedSampleCount) - windowStart))
+    }
+
+    function sampleX(index, left, width) {
         var count = Math.min(visibleSamples,
                              Math.max(0, samples.length - windowStart))
+        if (count <= 1)
+            return left + width
+
+        var fraction = (index - windowStart) / (count - 1)
+        return left + width * (reverseTime ? 1 - fraction : fraction)
+    }
+
+    function shouldShowPeakInfo() {
+        var count = visibleSampleCount()
         if (count === 0)
             return false
 
@@ -136,10 +155,14 @@ Rectangle {
                 || y < top || y > top + plotHeight)
             return -1
 
+        var fraction = (x - left) / plotWidth
+        if (reverseTime)
+            fraction = 1 - fraction
         if (count === 1)
-            return windowStart
+            return revealedSampleCount > windowStart ? windowStart : -1
 
-        return windowStart + Math.round((x - left) * (count - 1) / plotWidth)
+        var index = windowStart + Math.round(fraction * (count - 1))
+        return index < revealedSampleCount ? index : -1
     }
 
     function pointDescription(index) {
@@ -174,7 +197,8 @@ Rectangle {
 
     function peakPoints(positive) {
         var start = Math.max(0, windowStart)
-        var end = Math.min(samples.length, windowStart + visibleSamples)
+        var end = Math.min(samples.length, revealedSampleCount,
+                           windowStart + visibleSamples)
         if (start >= end)
             return []
 
@@ -324,8 +348,7 @@ Rectangle {
                 var plotHeight = Math.max(1, h - top - bottom)
                 var centerY = top + plotHeight / 2
                 var samples = chartCard.samples
-                var count = Math.min(chartCard.visibleSamples,
-                                     Math.max(0, samples.length - chartCard.windowStart))
+                var count = chartCard.visibleSampleCount()
                 var showSamplePoints = count <= plotWidth / 6
                 var end = chartCard.windowStart + count
                 var axisLimit = chartCard.currentAxisLimit()
@@ -423,10 +446,7 @@ Rectangle {
                                     -axisLimit,
                                     Math.min(axisLimit,
                                              Number(samples[i][series[seriesIndex].key])))
-                        var x = left + (count === 1
-                                        ? plotWidth
-                                        : plotWidth * (i - chartCard.windowStart)
-                                          / (count - 1))
+                        var x = chartCard.sampleX(i, left, plotWidth)
                         var sampleY = top + (axisLimit - sampleValue)
                                   * plotHeight / (2 * axisLimit)
                         if (i === chartCard.windowStart)
@@ -445,10 +465,8 @@ Rectangle {
                                         -axisLimit,
                                         Math.min(axisLimit,
                                                  Number(samples[pointIndex][series[seriesIndex].key])))
-                            var pointX = left + (count === 1
-                                                 ? plotWidth
-                                                 : plotWidth * (pointIndex - chartCard.windowStart)
-                                                   / (count - 1))
+                            var pointX = chartCard.sampleX(pointIndex,
+                                                          left, plotWidth)
                             var pointY = top + (axisLimit - pointValue)
                                        * plotHeight / (2 * axisLimit)
                             ctx.beginPath()
@@ -467,11 +485,8 @@ Rectangle {
                          peakIndex < allPeaks.length;
                          ++peakIndex) {
                         var peak = allPeaks[peakIndex]
-                        var peakX = left + (count === 1
-                                            ? plotWidth
-                                            : plotWidth * (peak.index
-                                                           - chartCard.windowStart)
-                                              / (count - 1))
+                        var peakX = chartCard.sampleX(peak.index,
+                                                     left, plotWidth)
                         var peakValue = Math.max(-axisLimit,
                                                  Math.min(axisLimit, peak.value))
                         var peakY = top + (axisLimit - peakValue)
@@ -517,10 +532,8 @@ Rectangle {
                     if (cursorIndex < chartCard.windowStart || cursorIndex >= end)
                         continue
 
-                    var cursorX = left + (count === 1
-                                          ? plotWidth
-                                          : plotWidth * (cursorIndex - chartCard.windowStart)
-                                            / (count - 1))
+                    var cursorX = chartCard.sampleX(cursorIndex,
+                                                   left, plotWidth)
                     var dashStep = Math.max(1, 10 * chartCard.scale)
                     var dashLength = Math.max(1, 5 * chartCard.scale)
                     ctx.strokeStyle = cursorColors[cursor]
@@ -704,6 +717,8 @@ Rectangle {
         plot.requestPaint()
     }
 
+    onRevealProgressChanged: plot.requestPaint()
+    onReverseTimeChanged: plot.requestPaint()
     onWindowStartChanged: plot.requestPaint()
     onVisibleSamplesChanged: plot.requestPaint()
     onValueKeyChanged: plot.requestPaint()

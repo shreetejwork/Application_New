@@ -9,13 +9,18 @@ Item {
     anchors.fill: parent
     property real scale: Math.min(width / 1024, height / 600)
     property var samples: []
+    property var pendingPackets: []
     property bool captureEnabled: true
+    property bool packetActive: false
+    property real packetProgress: 0
+    property double packetStartedAt: 0
+    property double packetPausedAt: 0
     property var selectedChannels: ["x", "y", "z1", "z2"]
     readonly property int waveformWindowMilliseconds: 10000
-    readonly property real waveformSampleIntervalMilliseconds: 1
-    readonly property int maxHistorySamples:
-        Math.ceil(waveformWindowMilliseconds
-                  / waveformSampleIntervalMilliseconds)
+    readonly property real waveformSampleIntervalMilliseconds:
+        samples.length > 1
+        ? waveformWindowMilliseconds / (samples.length - 1) : 1
+    readonly property int maxHistorySamples: 10000
 
     Component.onDestruction: Backend.SerialManager.setWaveformMode(false)
 
@@ -34,19 +39,63 @@ Item {
     }
 
     function showPacket(points) {
-        if (!points || points.length === 0)
+        if (!captureEnabled || !points || points.length === 0)
             return
 
-        var history = samples.concat(points)
-        if (history.length > maxHistorySamples)
-            history = history.slice(history.length - maxHistorySamples)
-        samples = history
+        var packet = points.slice()
+        if (packetActive) {
+            pendingPackets = pendingPackets.concat([packet])
+            return
+        }
+
+        startPacket(packet)
+    }
+
+    function startPacket(packet) {
+        samples = packet
+        packetProgress = 0
+        packetStartedAt = Date.now()
+        packetPausedAt = 0
+        packetActive = true
+        waveformChart.resetView()
+        waveformChart.clearCursorSelection()
+    }
+
+    function finishPacket() {
+        packetProgress = 1
+        packetStartedAt = 0
+        if (pendingPackets.length > 0) {
+            var nextPacket = pendingPackets[0]
+            pendingPackets = pendingPackets.slice(1)
+            startPacket(nextPacket)
+        } else {
+            packetActive = false
+        }
     }
 
     function clearBuffer() {
+        pendingPackets = []
+        packetActive = false
+        packetProgress = 0
+        packetStartedAt = 0
+        packetPausedAt = 0
         samples = []
         waveformChart.resetView()
         waveformChart.clearCursorSelection()
+    }
+
+    onCaptureEnabledChanged: {
+        if (!packetActive)
+            return
+
+        if (captureEnabled) {
+            if (packetPausedAt > 0) {
+                packetStartedAt += Date.now() - packetPausedAt
+                packetPausedAt = 0
+            }
+        } else {
+            packetPausedAt = Date.now()
+        }
     }
 
     Component.onCompleted: {
@@ -60,6 +109,25 @@ Item {
         function onWaveformDataChanged() {
             if (root.captureEnabled)
                 root.showPacket(Backend.WaveformManager.waveformData)
+        }
+    }
+
+    Timer {
+        interval: 33
+        repeat: true
+        running: root.packetActive && root.captureEnabled
+
+        onTriggered: {
+            var elapsed = Date.now() - root.packetStartedAt
+            if (elapsed >= root.waveformWindowMilliseconds) {
+                if (root.packetProgress >= 1)
+                    root.finishPacket()
+                else
+                    root.packetProgress = 1
+            } else {
+                root.packetProgress =
+                        elapsed / root.waveformWindowMilliseconds
+            }
         }
     }
 
@@ -259,6 +327,8 @@ Item {
             Layout.minimumHeight: 0
             scale: root.scale
             visibleSamples: root.maxHistorySamples
+            revealProgress: root.packetProgress
+            reverseTime: true
             sampleIntervalMilliseconds:
                 root.waveformSampleIntervalMilliseconds
             title: "Waveform"
